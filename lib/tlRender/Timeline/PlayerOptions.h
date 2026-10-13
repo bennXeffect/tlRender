@@ -23,6 +23,10 @@ namespace tl
         //! Number of seconds to read behind the current frame.
         float readBehind = .5F;
 
+        //! Percentage of the video cache to read behind the current frame,
+        //! the rest going ahead of it. Negative uses readBehind instead.
+        float readBehindPercent = -1.F;
+
         bool operator == (const PlayerCacheOptions&) const = default;
     };
 

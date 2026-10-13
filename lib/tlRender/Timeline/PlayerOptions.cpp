@@ -10,6 +10,7 @@ namespace tl
         json["VideoGB"] = value.videoGB;
         json["AudioGB"] = value.audioGB;
         json["ReadBehind"] = value.readBehind;
+        json["ReadBehindPercent"] = value.readBehindPercent;
     }
 
     void from_json(const nlohmann::json& json, PlayerCacheOptions& value)
@@ -17,5 +18,10 @@ namespace tl
         json.at("VideoGB").get_to(value.videoGB);
         json.at("AudioGB").get_to(value.audioGB);
         json.at("ReadBehind").get_to(value.readBehind);
+        // Optional: written by versions that have it.
+        if (json.contains("ReadBehindPercent"))
+        {
+            json.at("ReadBehindPercent").get_to(value.readBehindPercent);
+        }
     }
 }

@@ -229,13 +229,27 @@ namespace tl
         // range, including the current frame, fits within the maximum
         // size.
         const double rate = thread.state.currentTime.rate();
-        const double behindFrames = std::min(
-            OTIO_NS::RationalTime(thread.state.cacheOptions.readBehind, 1.0).
-                rescaled_to(rate).round().value(),
-            // No more than a quarter of the cache: against a budget of
-            // only a couple dozen frames, a fixed half second behind
-            // would leave almost nothing ahead.
-            max > 0 ? std::floor((max - 1) / 4.0) : 0.0);
+        double behindFrames = 0.0;
+        if (thread.state.cacheOptions.readBehindPercent >= 0.F)
+        {
+            // A share of the cache rather than a time: the same setting
+            // suits a cache of a few frames and one of thousands. No more
+            // than half, so what is ahead always gets at least as much.
+            const double percent = std::min(
+                static_cast<double>(thread.state.cacheOptions.readBehindPercent),
+                50.0);
+            behindFrames = max > 0 ? std::floor((max - 1) * percent / 100.0) : 0.0;
+        }
+        else
+        {
+            behindFrames = std::min(
+                OTIO_NS::RationalTime(thread.state.cacheOptions.readBehind, 1.0).
+                    rescaled_to(rate).round().value(),
+                // No more than a quarter of the cache: against a budget of
+                // only a couple dozen frames, a fixed half second behind
+                // would leave almost nothing ahead.
+                max > 0 ? std::floor((max - 1) / 4.0) : 0.0);
+        }
         const double aheadFrames = std::max(
             static_cast<double>(max) - behindFrames - 1.0,
             0.0);
@@ -474,7 +488,51 @@ namespace tl
                 return thread.videoRequests.size() >= playerOptions.videoRequestMax;
             };
             const OTIO_NS::RationalTime& current = thread.state.currentTime;
-            if (CacheDir::Forward == thread.cacheDir)
+            if (timeline->getPath().isSeq())
+            {
+                // An image sequence reads any frame as cheaply as the next,
+                // so both sides of the playhead fill together, each from
+                // the playhead outwards: two frames ahead for every one
+                // behind, so playing still finds what it needs first, and
+                // stepping back finds the frames just passed rather than
+                // the far end of the read behind. Several requests are in
+                // flight at once, so the two directions load in parallel.
+                const bool forward = CacheDir::Forward == thread.cacheDir;
+                const OTIO_NS::RationalTime step = forward ? inc : -inc;
+                // Ahead runs to the end of the range in the direction of
+                // play; the loop wraps it. Behind stops at the edge of the
+                // in/out range rather than wrapping, as above.
+                const OTIO_NS::RationalTime aheadEnd = forward ?
+                    videoCacheRange.end_time_inclusive() :
+                    videoCacheRange.start_time();
+                const OTIO_NS::RationalTime behindEnd = forward ?
+                    std::max(videoCacheRange.start_time(), thread.state.inOutRange.start_time()) :
+                    std::min(videoCacheRange.end_time_inclusive(), thread.state.inOutRange.end_time_inclusive());
+                OTIO_NS::RationalTime ahead = current;
+                OTIO_NS::RationalTime behind = current - step;
+                const auto aheadLeft = [&]
+                {
+                    return forward ? ahead <= aheadEnd : ahead >= aheadEnd;
+                };
+                const auto behindLeft = [&]
+                {
+                    return forward ? behind >= behindEnd : behind <= behindEnd;
+                };
+                while (!full() && (aheadLeft() || behindLeft()))
+                {
+                    for (int k = 0; k < 2 && aheadLeft() && !full(); ++k)
+                    {
+                        request(ahead);
+                        ahead += step;
+                    }
+                    if (behindLeft() && !full())
+                    {
+                        request(behind);
+                        behind -= step;
+                    }
+                }
+            }
+            else if (CacheDir::Forward == thread.cacheDir)
             {
                 for (OTIO_NS::RationalTime time = std::max(current, videoCacheRange.start_time());
                     time <= videoCacheRange.end_time_inclusive() && !full();
