@@ -801,6 +801,23 @@ namespace tl
             }
 #endif // TLRENDER_OCIO
 
+            // A layer's image options, with the alpha blend its own media
+            // asks for when there is a resolver to ask.
+            const auto layerImageOptions = [this](
+                const ftk::ImageOptions& value,
+                const std::string& path)
+            {
+                ftk::ImageOptions out = value;
+                if (_p->alphaBlendResolver && !path.empty())
+                {
+                    if (const auto alphaBlend = _p->alphaBlendResolver(path))
+                    {
+                        out.alphaBlend = alphaBlend.value();
+                    }
+                }
+                return out;
+            };
+
             // Draw a layer image, through an input color space to scene
             // linear when one is given. The transform is a second pass: the
             // image draws into an intermediate at its place in the buffer,
@@ -950,7 +967,7 @@ namespace tl
                                     glClearColor(0.F, 0.F, 0.F, 0.F);
                                     glClear(GL_COLOR_BUFFER_BIT);
                                     glDisable(GL_BLEND);
-                                    auto imageOptionsTmp = imageOptions.get() ? *imageOptions : layer.imageOptions;
+                                    auto imageOptionsTmp = layerImageOptions(imageOptions.get() ? *imageOptions : layer.imageOptions, layer.path);
                                     imageOptionsTmp.cache = false;
                                     drawLayerImage(
                                         layer.image,
@@ -970,7 +987,7 @@ namespace tl
                                     glClearColor(0.F, 0.F, 0.F, 0.F);
                                     glClear(GL_COLOR_BUFFER_BIT);
                                     glDisable(GL_BLEND);
-                                    auto imageOptionsTmp = imageOptions.get() ? *imageOptions : layer.imageOptionsB;
+                                    auto imageOptionsTmp = layerImageOptions(imageOptions.get() ? *imageOptions : layer.imageOptionsB, layer.pathB);
                                     imageOptionsTmp.cache = false;
                                     drawLayerImage(
                                         layer.imageB,
@@ -1012,7 +1029,7 @@ namespace tl
                             }
                             else if (layer.image)
                             {
-                                auto imageOptionsTmp = imageOptions.get() ? *imageOptions : layer.imageOptions;
+                                auto imageOptionsTmp = layerImageOptions(imageOptions.get() ? *imageOptions : layer.imageOptions, layer.path);
                                 imageOptionsTmp.cache = false;
                                 drawLayerImage(
                                     layer.image,
@@ -1026,7 +1043,7 @@ namespace tl
                             }
                             else if (layer.imageB)
                             {
-                                auto imageOptionsTmp = imageOptions.get() ? *imageOptions : layer.imageOptionsB;
+                                auto imageOptionsTmp = layerImageOptions(imageOptions.get() ? *imageOptions : layer.imageOptionsB, layer.pathB);
                                 imageOptionsTmp.cache = false;
                                 drawLayerImage(
                                     layer.imageB,
@@ -1043,7 +1060,7 @@ namespace tl
                     default:
                         if (layer.image)
                         {
-                            auto imageOptionsTmp = imageOptions.get() ? *imageOptions : layer.imageOptions;
+                            auto imageOptionsTmp = layerImageOptions(imageOptions.get() ? *imageOptions : layer.imageOptions, layer.path);
                             imageOptionsTmp.cache = false;
                             drawLayerImage(
                                 layer.image,

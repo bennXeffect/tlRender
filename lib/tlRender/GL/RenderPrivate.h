@@ -128,6 +128,8 @@ namespace tl
                 const std::string&,
                 const ftk::ImageTags&)> ocioInputResolver;
             std::map<std::string, std::string> ocioInputCache;
+            std::function<std::optional<ftk::AlphaBlend>(
+                const std::string&)> alphaBlendResolver;
             // What _toLinearShader() most recently bound, for the textures.
             std::shared_ptr<OCIOData> ocioToLinearBound;
             std::unique_ptr<OCIOLUTData> lutData;

@@ -36,6 +36,15 @@ namespace tl
                 const std::string& path,
                 const ftk::ImageTags&)>&) = 0;
 
+        //! Set a resolver for per layer alpha blending: given the path of
+        //! the media a layer came from, it says how its alpha is blended, or
+        //! nothing to keep the image options. Each clip of a timeline can so
+        //! be blended the way its own file is written -- an OpenEXR layer
+        //! premultiplied over a straight one.
+        TL_TIMELINE_API virtual void setAlphaBlendResolver(
+            const std::function<std::optional<ftk::AlphaBlend>(
+                const std::string& path)>&);
+
         //! Set the LUT options.
         TL_TIMELINE_API virtual void setLUTOptions(const LUTOptions&) = 0;
 

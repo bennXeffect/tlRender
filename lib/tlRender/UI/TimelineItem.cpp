@@ -519,8 +519,27 @@ namespace tl
             int y =
                 p.size.labelHeight +
                 value.min.y;
+            // Video tracks from the top down in the order they composite --
+            // the last one, on top of the picture, at the top -- as an
+            // editor stacks them; audio tracks below in their own order.
+            std::vector<Private::Track*> order;
+            for (auto i = p.tracks.rbegin(); i != p.tracks.rend(); ++i)
+            {
+                if (TrackType::Video == i->type)
+                {
+                    order.push_back(&*i);
+                }
+            }
             for (auto& track : p.tracks)
             {
+                if (TrackType::Video != track.type)
+                {
+                    order.push_back(&track);
+                }
+            }
+            for (auto trackPtr : order)
+            {
+                auto& track = *trackPtr;
                 const bool visible = track.visible;
 
                 ftk::Size2I labelSizeHint;

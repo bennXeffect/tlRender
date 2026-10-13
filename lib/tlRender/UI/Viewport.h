@@ -63,6 +63,12 @@ namespace tl
             TL_UI_API std::shared_ptr<ftk::IObservable<OCIOOptions> > observeOCIOOptions() const;
             TL_UI_API void setOCIOOptions(const OCIOOptions&);
 
+            //! Set a resolver for per layer alpha blending; see
+            //! IRender::setAlphaBlendResolver().
+            TL_UI_API void setAlphaBlendResolver(
+                const std::function<std::optional<ftk::AlphaBlend>(
+                    const std::string& path)>&);
+
             //! Set a resolver for per layer OCIO input color spaces; see
             //! IRender::setOCIOInputResolver().
             TL_UI_API void setOCIOInputResolver(

@@ -52,6 +52,8 @@ namespace tl
             std::function<std::string(
                 const std::string&,
                 const ftk::ImageTags&)> ocioInputResolver;
+            std::function<std::optional<ftk::AlphaBlend>(
+                const std::string&)> alphaBlendResolver;
             std::shared_ptr<ftk::Observable<LUTOptions> > lutOptions;
             std::shared_ptr<ftk::ObservableList<ftk::ImageOptions> > imageOptions;
             std::shared_ptr<ftk::ObservableList<DisplayOptions> > displayOptions;
@@ -233,6 +235,16 @@ namespace tl
         {
             FTK_P();
             p.ocioInputResolver = value;
+            setDrawUpdate();
+        }
+
+        void Viewport::setAlphaBlendResolver(
+            const std::function<std::optional<ftk::AlphaBlend>(
+                const std::string& path)>& value)
+        {
+            FTK_P();
+            p.alphaBlendResolver = value;
+            p.doRender = true;
             setDrawUpdate();
         }
 
@@ -1070,6 +1082,7 @@ namespace tl
                         render->clearViewport(ftk::Color4F(0.F, 0.F, 0.F, 0.F));
                         render->setOCIOOptions(p.ocioOptions->get());
                         render->setOCIOInputResolver(p.ocioInputResolver);
+                        render->setAlphaBlendResolver(p.alphaBlendResolver);
                         render->setLUTOptions(p.lutOptions->get());
                         render->setTransform(pm * vm);
                         render->drawVideo(

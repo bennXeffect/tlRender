@@ -7,4 +7,9 @@ namespace tl
 {
     IRender::~IRender()
     {}
+
+    void IRender::setAlphaBlendResolver(
+        const std::function<std::optional<ftk::AlphaBlend>(
+            const std::string& path)>&)
+    {}
 }

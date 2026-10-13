@@ -567,6 +567,13 @@ namespace tl
 #endif // TLRENDER_OCIO
         }
 
+        void Render::setAlphaBlendResolver(
+            const std::function<std::optional<ftk::AlphaBlend>(
+                const std::string& path)>& value)
+        {
+            _p->alphaBlendResolver = value;
+        }
+
         void Render::setLUTOptions(const LUTOptions& value)
         {
             FTK_P();

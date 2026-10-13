@@ -45,6 +45,9 @@ namespace tl
                 const std::function<std::string(
                     const std::string& path,
                     const ftk::ImageTags&)>&) override;
+            TL_GL_API void setAlphaBlendResolver(
+                const std::function<std::optional<ftk::AlphaBlend>(
+                    const std::string& path)>&) override;
             TL_GL_API void setLUTOptions(const LUTOptions&) override;
 
             TL_GL_API void drawBackground(
