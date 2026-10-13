@@ -3,6 +3,8 @@
 
 #include <tlRender/UI/TimelineRuler.h>
 
+#include <tlRender/Timeline/TimeUnits.h>
+
 #include <ftk/Core/RenderUtil.h>
 
 #include <cmath>
@@ -429,22 +431,44 @@ namespace tl
                 // width on screen: the ticks are spaced along the timeline,
                 // and only some of it is in view.
                 const int w = duration * p.scale;
-                const int secondsTick = 1.0 / duration * w;
-                const int minutesTick = 60.0 / duration * w;
-                const int hoursTick = 3600.0 / duration * w;
                 const ftk::Size2I labelMaxSize = _getLabelMaxSize(fontSystem);
                 const int distanceMin = p.size.border + p.size.margin + labelMaxSize.w;
-                if (secondsTick >= distanceMin)
+                // The smallest round step whose labels have room. Counted
+                // in frames, the steps are round numbers of frames -- 10,
+                // 25, 100, 250 -- so the labels are frame numbers someone
+                // would write down; a second or a minute at 24 frames a
+                // second labels 1440 and 2880. Counted in time, they are
+                // round lengths of time.
+                bool frames = false;
+                if (auto timeUnitsModel =
+                    std::dynamic_pointer_cast<TimeUnitsModel>(p.data->timeUnitsModel))
                 {
-                    out = 1.0;
+                    frames = TimeUnits::Frames == timeUnitsModel->getTimeUnits();
                 }
-                else if (minutesTick >= distanceMin)
+                const double rate = p.timeRange.duration().rate();
+                std::vector<double> steps;
+                if (frames && rate > 0.0)
                 {
-                    out = 60.0;
+                    for (const double f : {
+                        1.0, 2.0, 5.0, 10.0, 25.0, 50.0, 100.0, 250.0, 500.0,
+                        1000.0, 2500.0, 5000.0, 10000.0, 25000.0, 50000.0, 100000.0 })
+                    {
+                        steps.push_back(f / rate);
+                    }
                 }
-                else if (hoursTick >= distanceMin)
+                else
                 {
-                    out = 3600.0;
+                    steps = {
+                        1.0, 2.0, 5.0, 10.0, 15.0, 30.0,
+                        60.0, 120.0, 300.0, 600.0, 900.0, 1800.0, 3600.0 };
+                }
+                for (const double step : steps)
+                {
+                    if (static_cast<int>(step / duration * w) >= distanceMin)
+                    {
+                        out = step;
+                        break;
+                    }
                 }
             }
             return out;
@@ -725,7 +749,7 @@ namespace tl
                     {
                         const int x = timeToPos(OTIO_NS::RationalTime(t, 1.0));
                         const std::string label = _timeLabel(
-                            OTIO_NS::RationalTime(t, 1.0).rescaled_to(rate));
+                            OTIO_NS::RationalTime(t, 1.0).rescaled_to(rate).round());
                         event.render->drawText(
                             event.fontSystem->getGlyphs(label, p.size.fontInfo),
                             p.size.fontMetrics,
