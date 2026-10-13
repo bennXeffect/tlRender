@@ -272,6 +272,11 @@ namespace tl
             //! action would.
             TL_UI_API void pick(const ftk::V2I& imagePos);
 
+            //! Sample the image at the given position, in the viewport's own
+            //! coordinates, as the pick mouse action would while dragging.
+            //! For a derived viewport with a sampling gesture of its own.
+            TL_UI_API void sample(const ftk::V2I& viewportPos);
+
             ///@}
 
             //! \name Input

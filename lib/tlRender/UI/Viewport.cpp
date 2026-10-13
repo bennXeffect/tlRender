@@ -699,6 +699,16 @@ namespace tl
             return _p->colorSample;
         }
 
+        void Viewport::sample(const ftk::V2I& viewportPos)
+        {
+            FTK_P();
+            p.picked = true;
+            if (p.samplePos->setIfChanged(viewportPos))
+            {
+                _sampleUpdate();
+            }
+        }
+
         void Viewport::pick(const ftk::V2I& imagePos)
         {
             FTK_P();
