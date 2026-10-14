@@ -75,6 +75,12 @@ namespace tl
         size_t logId = 0;
         PlayerOptions playerOptions;
         std::shared_ptr<Timeline> timeline;
+        //! Whether any frame reads as cheaply as the next: an image
+        //! sequence, or a timeline of nothing but image sequences and
+        //! stills, as a layer stack is. The cache then fills both ways from
+        //! the playhead at once; a movie's reader decodes in order and is
+        //! asked for its frames in order.
+        bool randomAccess = false;
         OTIO_NS::TimeRange timeRange;
 
         // The audio format of the media, found when the timeline was read. This

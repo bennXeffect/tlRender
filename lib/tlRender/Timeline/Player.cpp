@@ -6,6 +6,12 @@
 #include <tlRender/Timeline/System.h>
 #include <tlRender/Timeline/Util.h>
 
+#include <tlRender/IO/System.h>
+
+#include <opentimelineio/clip.h>
+#include <opentimelineio/externalReference.h>
+#include <opentimelineio/imageSequenceReference.h>
+
 #include <ftk/Core/Context.h>
 #include <ftk/Core/Error.h>
 #include <ftk/Core/Format.h>
@@ -104,6 +110,34 @@ namespace tl
             p.playerOptions.videoRequestMax = timeline->getVideoRequestMax();
         }
         p.timeline = timeline;
+        p.randomAccess = timeline->getPath().isSeq();
+        if (!p.randomAccess)
+        {
+            const auto readSystem = context->getSystem<ReadSystem>();
+            size_t clips = 0;
+            bool images = true;
+            for (const auto& clip :
+                timeline->getOTIOTimeline()->find_children<OTIO_NS::Clip>())
+            {
+                ++clips;
+                const auto ref = timeline->getMediaReference(clip.value);
+                if (dynamic_cast<const OTIO_NS::ImageSequenceReference*>(ref))
+                {
+                    continue;
+                }
+                if (auto external = dynamic_cast<const OTIO_NS::ExternalReference*>(ref))
+                {
+                    const std::string ext = ftk::Path(external->target_url()).getExt();
+                    if (readSystem && FileType::Seq == readSystem->getFileType(ext))
+                    {
+                        continue;
+                    }
+                }
+                images = false;
+                break;
+            }
+            p.randomAccess = clips > 0 && images;
+        }
         p.timeRange = timeline->getTimeRange();
         p.sourceAudioInfo = timeline->getIOInfo().audio;
 

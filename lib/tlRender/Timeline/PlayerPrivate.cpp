@@ -517,7 +517,7 @@ namespace tl
                 return thread.videoRequests.size() >= playerOptions.videoRequestMax;
             };
             const OTIO_NS::RationalTime& current = thread.state.currentTime;
-            if (timeline->getPath().isSeq())
+            if (randomAccess)
             {
                 // An image sequence reads any frame as cheaply as the next,
                 // so both sides of the playhead fill together, each from
