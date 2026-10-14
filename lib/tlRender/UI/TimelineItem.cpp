@@ -545,7 +545,7 @@ namespace tl
                 ftk::Size2I labelSizeHint;
                 ftk::Size2I durationSizeHint;
                 int trackInfoHeight = 0;
-                if (visible && !_displayOptions.minimize)
+                if (visible && !_displayOptions.minimize && !track.infoRedundant)
                 {
                     labelSizeHint = track.label->getSizeHint();
                     durationSizeHint = track.durationLabel->getSizeHint();
@@ -703,7 +703,7 @@ namespace tl
                         track.clipHeight = std::max(track.clipHeight, h);
                     }
                     track.size.h = track.clipHeight;
-                    if (!_displayOptions.minimize)
+                    if (!_displayOptions.minimize && !track.infoRedundant)
                     {
                         track.size.h += std::max(
                             track.label->getSizeHint().h,
@@ -1096,6 +1096,22 @@ namespace tl
                     }
                 }
                 track.timeRange = otioTrack->trimmed_range();
+                {
+                    size_t clips = 0;
+                    std::string clipName;
+                    for (const auto& trackChild : otioTrack->children())
+                    {
+                        if (auto clip = OTIO_NS::dynamic_retainer_cast<OTIO_NS::Clip>(trackChild))
+                        {
+                            ++clips;
+                            clipName = clip->name();
+                        }
+                    }
+                    track.infoRedundant =
+                        1 == clips &&
+                        !otioTrack->name().empty() &&
+                        clipName == otioTrack->name();
+                }
                 track.label = ftk::Label::create(
                     context,
                     trackLabel,
@@ -1974,8 +1990,9 @@ namespace tl
             for (const auto& track : p.tracks)
             {
                 const bool visible = _isTrackVisible(track.index);
-                track.label->setVisible(!_displayOptions.minimize && visible);
-                track.durationLabel->setVisible(!_displayOptions.minimize && visible);
+                const bool info = !_displayOptions.minimize && visible && !track.infoRedundant;
+                track.label->setVisible(info);
+                track.durationLabel->setVisible(info);
             }
         }
 

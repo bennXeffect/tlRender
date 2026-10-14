@@ -142,6 +142,11 @@ namespace tl
                 ftk::Box2I geom;
                 int clipHeight = 0;
                 bool visible = true;
+                //! Whether the track's name and length only repeat what its
+                //! one clip already says, so the row above the clip is left
+                //! out: a layer of a layer stack is a track holding a clip of
+                //! the same name.
+                bool infoRedundant = false;
             };
             std::vector<Track> tracks;
             int firstVideoTrack = -1;

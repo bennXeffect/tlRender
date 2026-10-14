@@ -46,7 +46,7 @@ namespace tl
     {
         TL_IO_API SeqOptions();
 
-        double        defaultSpeed  = 24.0;
+        double        defaultSpeed  = 30.0;
         MissingFrames missingFrames = MissingFrames::Error;
 
         bool operator == (const SeqOptions&) const = default;
