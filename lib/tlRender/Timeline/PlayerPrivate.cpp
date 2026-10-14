@@ -3,6 +3,8 @@
 
 #include <tlRender/Timeline/PlayerPrivate.h>
 
+#include <algorithm>
+
 #include <tlRender/Timeline/Util.h>
 
 #include <ftk/Core/Context.h>
@@ -179,8 +181,9 @@ namespace tl
     size_t Player::Private::getVideoCacheMax() const
     {
         // This function returns the approximate number of video frames
-        // that can fit in the cache. Note that this doesn't take into
-        // account clips with different sizes or multiple tracks.
+        // that can fit in the cache: from the information until frames have
+        // been read, and from the largest frame read after that, which
+        // accounts for the layers of a timeline with several tracks.
         size_t byteCount = 0;
         const IOInfo& videoInfo = timeline->getIOInfo();
         if (thread.state.videoLayer >= 0 &&
@@ -202,6 +205,8 @@ namespace tl
                 }
             }
         }
+
+        byteCount = std::max(byteCount, thread.frameBytes);
 
         return byteCount > 0 ?
             ((thread.state.cacheOptions.videoGB * ftk::gigabyte) / byteCount) :
@@ -249,6 +254,23 @@ namespace tl
                 // only a couple dozen frames, a fixed half second behind
                 // would leave almost nothing ahead.
                 max > 0 ? std::floor((max - 1) / 4.0) : 0.0);
+        }
+        // No more than there is behind the playhead: the read behind stops
+        // at the in point (see cacheEvictAndFill()), so near the start what
+        // it would keep is not there, and the room goes ahead instead.
+        if (CacheDir::Forward == thread.cacheDir)
+        {
+            const double behindAvailable = std::floor(
+                (thread.state.currentTime -
+                    thread.state.inOutRange.start_time()).rescaled_to(rate).value());
+            behindFrames = std::min(behindFrames, std::max(behindAvailable, 0.0));
+        }
+        else
+        {
+            const double behindAvailable = std::floor(
+                (thread.state.inOutRange.end_time_inclusive() -
+                    thread.state.currentTime).rescaled_to(rate).value());
+            behindFrames = std::min(behindFrames, std::max(behindAvailable, 0.0));
         }
         const double aheadFrames = std::max(
             static_cast<double>(max) - behindFrames - 1.0,
@@ -351,6 +373,13 @@ namespace tl
 
     void Player::Private::cacheEvictAndFill()
     {
+        if (thread.frameBytesCompare != thread.state.compare.size() ||
+            thread.frameBytesLayer != thread.state.videoLayer)
+        {
+            thread.frameBytes = 0;
+            thread.frameBytesCompare = thread.state.compare.size();
+            thread.frameBytesLayer = thread.state.videoLayer;
+        }
         const size_t videoCacheMax = getVideoCacheMax();
         const size_t audioCacheMax = getAudioCacheMax();
         const OTIO_NS::TimeRange videoCacheRange = getVideoCacheRange(videoCacheMax);
@@ -674,6 +703,28 @@ namespace tl
                     }
                     videoFrame.time = time;
                     videoFrameList.emplace_back(videoFrame);
+                }
+                // What the frame takes, each image once: a file compared
+                // with itself shares its images.
+                {
+                    size_t bytes = 0;
+                    std::vector<const ftk::Image*> seen;
+                    for (const auto& videoFrame : videoFrameList)
+                    {
+                        for (const auto& layer : videoFrame.layers)
+                        {
+                            for (const auto& image : { layer.image, layer.imageB })
+                            {
+                                if (image &&
+                                    std::find(seen.begin(), seen.end(), image.get()) == seen.end())
+                                {
+                                    seen.push_back(image.get());
+                                    bytes += image->getByteCount();
+                                }
+                            }
+                        }
+                    }
+                    thread.frameBytes = std::max(thread.frameBytes, bytes);
                 }
                 thread.videoCache[time] = videoFrameList;
                 videoRequestsIt = thread.videoRequests.erase(videoRequestsIt);

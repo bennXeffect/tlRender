@@ -217,6 +217,16 @@ namespace tl
             bool cacheKeyValid = false;
             std::map<OTIO_NS::RationalTime, std::vector<VideoRequest> > videoRequests;
             std::map<OTIO_NS::RationalTime, std::vector<VideoFrame> > videoCache;
+            // The size of the largest frame that has come into the cache,
+            // measured from its images: every layer of a timeline with
+            // several tracks, and the frames compared with it. What the
+            // first track's information says a frame takes is a frame of
+            // one layer, and a stack of an OpenEXR over a JPG filled several
+            // times the memory it was given. Measured again when what is
+            // compared, or which layer of the file, changes.
+            size_t frameBytes = 0;
+            size_t frameBytesCompare = 0;
+            int frameBytesLayer = 0;
             std::map<int64_t, AudioRequest> audioRequests;
             std::chrono::steady_clock::time_point cacheTimer;
             std::chrono::steady_clock::time_point logTimer;
