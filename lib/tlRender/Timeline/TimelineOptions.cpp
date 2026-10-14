@@ -33,7 +33,15 @@ namespace tl
         // playhead needed waited behind the others and was dropped. A format
         // that is expensive to decode can use more, and the setting is there
         // for it.
-        return std::clamp(std::thread::hardware_concurrency(), 1u, 8u);
+        //
+        // From a fast SSD, though, decoding is the limit rather than the
+        // disk: 2560x1440 half float OpenEXR frames read 315 a second on
+        // eight threads and 509 on sixteen when ZIP compressed. Half the
+        // cores, up to sixteen, and at least eight where there are that
+        // many: the playhead's frame is asked for first, so the frames in
+        // flight beside it are no longer what it waits behind.
+        const unsigned int cores = std::thread::hardware_concurrency();
+        return std::clamp(std::max(cores / 2, std::min(cores, 8u)), 1u, 16u);
     }
 
 }
