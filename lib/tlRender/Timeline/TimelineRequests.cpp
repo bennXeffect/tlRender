@@ -27,6 +27,12 @@
 
 #include <algorithm>
 
+#if defined(FTK_SDL2)
+#include <SDL2/SDL.h>
+#elif defined(FTK_SDL3)
+#include <SDL3/SDL.h>
+#endif // FTK_SDL2
+
 namespace tl
 {
     namespace
@@ -795,6 +801,16 @@ namespace tl
             readPool.threads.push_back(std::thread(
                 [this]
                 {
+                    // Reading ahead runs below the application's own thread:
+                    // with every core decoding and the memory bus full, the
+                    // frame being shown waited for its turn to be uploaded,
+                    // and a stack played at 20 frames a second until the
+                    // cache had filled.
+#if defined(FTK_SDL2)
+                    SDL_SetThreadPriority(SDL_THREAD_PRIORITY_LOW);
+#elif defined(FTK_SDL3)
+                    SDL_SetCurrentThreadPriority(SDL_THREAD_PRIORITY_LOW);
+#endif // FTK_SDL2
                     while (true)
                     {
                         ReadPool::Task task;

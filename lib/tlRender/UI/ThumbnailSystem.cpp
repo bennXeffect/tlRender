@@ -18,6 +18,12 @@
 #include <ftk/Core/Util.h>
 
 #include <algorithm>
+
+#if defined(FTK_SDL2)
+#include <SDL2/SDL.h>
+#elif defined(FTK_SDL3)
+#include <SDL3/SDL.h>
+#endif // FTK_SDL2
 #include <filesystem>
 #include <future>
 #include <atomic>
@@ -971,6 +977,14 @@ namespace tl
                 std::shared_ptr<ImageScale>& scale)
             {
                 FTK_P();
+                // Below the application's own thread, as reading ahead is:
+                // the picture being played comes first.
+#if defined(FTK_SDL2)
+                SDL_SetThreadPriority(SDL_THREAD_PRIORITY_LOW);
+#elif defined(FTK_SDL3)
+                SDL_SetCurrentThreadPriority(SDL_THREAD_PRIORITY_LOW);
+#endif // FTK_SDL2
+
                 std::shared_ptr<ftk::Image> image;
                 try
                 {
