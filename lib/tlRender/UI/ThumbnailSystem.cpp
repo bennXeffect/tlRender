@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <future>
 #include <atomic>
 #include <chrono>
 #include <list>
@@ -355,6 +356,8 @@ namespace tl
             struct ThumbnailThread
             {
                 std::shared_ptr<ImageScale> scale;
+                //! One for each thumbnail of a batch made at once.
+                std::vector<std::shared_ptr<ImageScale> > scales;
                 std::atomic<bool> ioCacheClear = false;
                 std::condition_variable cv;
                 std::thread thread;
@@ -960,7 +963,143 @@ namespace tl
         void ThumbnailSystem::_thumbnailRun()
         {
             FTK_P();
-            tl::IOOptions ioOptions;
+
+            // One thumbnail from its request: the frame read whole and scaled
+            // down.
+            const auto make = [this](
+                const std::shared_ptr<Private::ThumbnailRequest>& request,
+                std::shared_ptr<ImageScale>& scale)
+            {
+                FTK_P();
+                std::shared_ptr<ftk::Image> image;
+                try
+                {
+                    auto context = p.context.lock();
+                    // The scale reads pixels, so the frame cannot be a
+                    // texture whatever the caller asked for.
+                    IOOptions options = request->options;
+                    options.erase("Texture");
+                    auto timeline = getTimeline(
+                        context, p.ioCache, p.ioCacheMutex, request->path,
+                        request->audioPath, options,
+                        ThumbnailType::Timeline == request->type);
+                    IOInfo info;
+                    if (timeline &&
+                        timeline->getMediaInfo(
+                            request->mediaPath, info, options))
+                    {
+                        ftk::Size2I size;
+                        if (!info.video.empty())
+                        {
+                            size.w = request->height * ftk::aspectRatio(info.video[0].size);
+                            size.h = request->height;
+                        }
+                        if (size.isValid())
+                        {
+                            const OTIO_NS::RationalTime time =
+                                request->time.value_or(
+                                    info.videoTime->start_time());
+                            auto videoRequest = timeline->readMedia(
+                                request->mediaPath, time, options);
+                            if (videoRequest.valid())
+                            {
+                                const auto videoData = videoRequest.get();
+                                if (videoData.image &&
+                                    p.thumbnailThread.running)
+                                {
+                                    image = scaleImage(
+                                        context->getLogSystem(),
+                                        scale,
+                                        videoData.image,
+                                        size);
+                                }
+                            }
+                        }
+                    }
+                    else if (timeline)
+                    {
+                        // The request does not name media inside the
+                        // timeline, so it wants a picture of the timeline
+                        // itself. Use the one already open: creating
+                        // another here would read the file again for
+                        // every request, which on a bundle of 25,000
+                        // entries makes a thumbnail take as long as an
+                        // open.
+                        //
+                        // Only worth saying when media was asked for and
+                        // not found. The overload that takes one path asks
+                        // for the timeline with its own path, so warning
+                        // whenever the two match would report every
+                        // thumbnail of a timeline as a fault.
+                        const bool mediaAsked =
+                            request->mediaPath.get() != request->path.get();
+                        auto logSystem = context->getLogSystem();
+                        if (mediaAsked && logSystem)
+                        {
+                            logSystem->print("tl::ui::ThumbnailSystem",
+                                ftk::Format("Media not found in timeline, "
+                                    "using the timeline itself: \"{0}\" "
+                                    "in \"{1}\"").
+                                    arg(request->mediaPath.get()).
+                                    arg(request->path.get()),
+                                ftk::LogType::Warning);
+                        }
+                        const auto info = timeline->getIOInfo();
+                        const auto videoData = timeline->getVideo(
+                            request->time.value_or(
+                                timeline->getTimeRange().start_time())).future.get();
+                        ftk::Size2I size;
+                        if (!info.video.empty())
+                        {
+                            size.w = request->height * ftk::aspectRatio(info.video.front().size);
+                            size.h = request->height;
+                        }
+                        if (size.isValid())
+                        {
+                            // The thumbnail is the first layer's image;
+                            // a miniature of a compare is not worth a
+                            // renderer here.
+                            std::shared_ptr<ftk::Image> layerImage;
+                            for (const auto& layer : videoData.layers)
+                            {
+                                if (layer.image)
+                                {
+                                    layerImage = layer.image;
+                                    break;
+                                }
+                            }
+                            if (layerImage && p.thumbnailThread.running)
+                            {
+                                image = scaleImage(
+                                    context->getLogSystem(),
+                                    scale,
+                                    layerImage,
+                                    size);
+                            }
+                        }
+                    }
+                }
+                catch (const std::exception&)
+                {}
+                return image;
+            };
+
+            // Several thumbnails are made at once. The timelines opened for
+            // them read on the thread that asks, so one at a time each
+            // waited for the last to be read, decoded and scaled: a strip of
+            // a hundred and sixty for a render took seconds to fill. The
+            // timeline guards its caches, so it can be read from several
+            // threads; each has a scaler of its own.
+#if defined(__EMSCRIPTEN__)
+            const size_t batchMax = 1;
+#else // __EMSCRIPTEN__
+            const size_t batchMax = std::clamp(
+                static_cast<size_t>(std::thread::hardware_concurrency() / 2),
+                static_cast<size_t>(1),
+                static_cast<size_t>(8));
+#endif // __EMSCRIPTEN__
+            p.thumbnailThread.scales.resize(batchMax);
+
             while (p.thumbnailThread.running)
             {
                 if (p.thumbnailThread.ioCacheClear.exchange(false))
@@ -968,7 +1107,7 @@ namespace tl
                     p.clearIOCache();
                 }
 
-                std::shared_ptr<Private::ThumbnailRequest> request;
+                std::vector<std::shared_ptr<Private::ThumbnailRequest> > batch;
                 {
                     std::unique_lock<std::mutex> lock(p.thumbnailMutex.mutex);
                     if (p.thumbnailThread.cv.wait_for(
@@ -980,14 +1119,16 @@ namespace tl
                                 !_p->thumbnailThread.running ||
                                 _p->thumbnailThread.ioCacheClear ||
                                 !_p->thumbnailMutex.requests.empty();
-                        }) &&
-                        !p.thumbnailMutex.requests.empty())
+                        }))
                     {
-                        request = p.thumbnailMutex.requests.front();
-                        p.thumbnailMutex.requests.pop_front();
+                        while (!p.thumbnailMutex.requests.empty() && batch.size() < batchMax)
+                        {
+                            batch.push_back(p.thumbnailMutex.requests.front());
+                            p.thumbnailMutex.requests.pop_front();
+                        }
                     }
                 }
-                if (request)
+                if (!batch.empty())
                 {
 #if defined(__EMSCRIPTEN__)
                     // WebKit reclaims decode garbage lazily: an
@@ -1004,128 +1145,46 @@ namespace tl
                     // timeline for it would mean reopening the file each time.
                     p.ioCacheTouch();
 
-                    std::shared_ptr<ftk::Image> image;
-                    try
+                    std::vector<std::shared_ptr<ftk::Image> > images(batch.size());
+                    if (1 == batch.size())
                     {
-                        auto context = p.context.lock();
-                        // The scale reads pixels, so the frame cannot be a
-                        // texture whatever the caller asked for.
-                        IOOptions options = request->options;
-                        options.erase("Texture");
-                        auto timeline = getTimeline(
-                            context, p.ioCache, p.ioCacheMutex, request->path,
-                            request->audioPath, options,
-                            ThumbnailType::Timeline == request->type);
-                        IOInfo info;
-                        if (timeline &&
-                            timeline->getMediaInfo(
-                                request->mediaPath, info, options))
+                        images[0] = make(batch[0], p.thumbnailThread.scale);
+                    }
+                    else
+                    {
+                        std::vector<std::future<std::shared_ptr<ftk::Image> > > futures;
+                        for (size_t i = 0; i < batch.size(); ++i)
                         {
-                            ftk::Size2I size;
-                            if (!info.video.empty())
-                            {
-                                size.w = request->height * ftk::aspectRatio(info.video[0].size);
-                                size.h = request->height;
-                            }
-                            if (size.isValid())
-                            {
-                                const OTIO_NS::RationalTime time =
-                                    request->time.value_or(
-                                        info.videoTime->start_time());
-                                auto videoRequest = timeline->readMedia(
-                                    request->mediaPath, time, options);
-                                if (videoRequest.valid())
+                            futures.push_back(std::async(
+                                std::launch::async,
+                                [&make, &batch, this, i]
                                 {
-                                    const auto videoData = videoRequest.get();
-                                    if (videoData.image &&
-                                        p.thumbnailThread.running)
-                                    {
-                                        image = scaleImage(
-                                            context->getLogSystem(),
-                                            p.thumbnailThread.scale,
-                                            videoData.image,
-                                            size);
-                                    }
-                                }
-                            }
+                                    return make(batch[i], _p->thumbnailThread.scales[i]);
+                                }));
                         }
-                        else if (timeline)
+                        for (size_t i = 0; i < futures.size(); ++i)
                         {
-                            // The request does not name media inside the
-                            // timeline, so it wants a picture of the timeline
-                            // itself. Use the one already open: creating
-                            // another here would read the file again for
-                            // every request, which on a bundle of 25,000
-                            // entries makes a thumbnail take as long as an
-                            // open.
-                            //
-                            // Only worth saying when media was asked for and
-                            // not found. The overload that takes one path asks
-                            // for the timeline with its own path, so warning
-                            // whenever the two match would report every
-                            // thumbnail of a timeline as a fault.
-                            const bool mediaAsked =
-                                request->mediaPath.get() != request->path.get();
-                            auto logSystem = context->getLogSystem();
-                            if (mediaAsked && logSystem)
-                            {
-                                logSystem->print("tl::ui::ThumbnailSystem",
-                                    ftk::Format("Media not found in timeline, "
-                                        "using the timeline itself: \"{0}\" "
-                                        "in \"{1}\"").
-                                        arg(request->mediaPath.get()).
-                                        arg(request->path.get()),
-                                    ftk::LogType::Warning);
-                            }
-                            const auto info = timeline->getIOInfo();
-                            const auto videoData = timeline->getVideo(
-                                request->time.value_or(
-                                    timeline->getTimeRange().start_time())).future.get();
-                            ftk::Size2I size;
-                            if (!info.video.empty())
-                            {
-                                size.w = request->height * ftk::aspectRatio(info.video.front().size);
-                                size.h = request->height;
-                            }
-                            if (size.isValid())
-                            {
-                                // The thumbnail is the first layer's image;
-                                // a miniature of a compare is not worth a
-                                // renderer here.
-                                std::shared_ptr<ftk::Image> layerImage;
-                                for (const auto& layer : videoData.layers)
-                                {
-                                    if (layer.image)
-                                    {
-                                        layerImage = layer.image;
-                                        break;
-                                    }
-                                }
-                                if (layerImage && p.thumbnailThread.running)
-                                {
-                                    image = scaleImage(
-                                        context->getLogSystem(),
-                                        p.thumbnailThread.scale,
-                                        layerImage,
-                                        size);
-                                }
-                            }
+                            images[i] = futures[i].get();
                         }
                     }
-                    catch (const std::exception&)
-                    {}
-                    request->promise.set_value(image);
 
-                    // By the key the request was made with; see
-                    // InfoRequest. An empty answer is not cached: it is a
-                    // timeout or an unreadable file, and a cached nothing
-                    // would answer every retry with the same nothing.
-                    if (image)
+                    for (size_t i = 0; i < batch.size(); ++i)
                     {
-                        std::unique_lock<std::mutex> lock(
-                            p.thumbnailMutex.mutex);
-                        p.thumbnailMutex.cache.add(
-                            request->key, image, image->getByteCount());
+                        const auto& request = batch[i];
+                        const auto& image = images[i];
+                        request->promise.set_value(image);
+
+                        // By the key the request was made with; see
+                        // InfoRequest. An empty answer is not cached: it is a
+                        // timeout or an unreadable file, and a cached nothing
+                        // would answer every retry with the same nothing.
+                        if (image)
+                        {
+                            std::unique_lock<std::mutex> lock(
+                                p.thumbnailMutex.mutex);
+                            p.thumbnailMutex.cache.add(
+                                request->key, image, image->getByteCount());
+                        }
                     }
                 }
                 else if (p.ioCacheCount() > 0 && p.ioCacheIdle(ioCacheTimeout))
