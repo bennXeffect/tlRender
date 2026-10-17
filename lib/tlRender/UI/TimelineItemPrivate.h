@@ -120,8 +120,10 @@ namespace tl
                     int x = 0;
                     int w = 0;
 
-                    //! How much of it shows: a thumbnail is cut where the
-                    //! next one starts.
+                    //! How much of it shows, from where: a thumbnail is
+                    //! cut where the next one starts, and a slice is the
+                    //! middle of its thumbnail.
+                    int visibleX = 0;
                     int visibleW = 0;
 
                     std::shared_ptr<ftk::Image> image;

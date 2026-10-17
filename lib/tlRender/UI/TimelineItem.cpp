@@ -1440,9 +1440,30 @@ namespace tl
             // Rounded rather than rounded up, so the strip stays about as dense
             // as it was: a step that comes out short overlaps the one before by
             // less than a frame, which reads better than a gap.
-            const int64_t frameStep = std::max(
+            int64_t frameStep = std::max(
                 static_cast<int64_t>(1),
                 static_cast<int64_t>(std::round(thumbnailWidth / perFrame)));
+
+            // Zoomed out, a whole thumbnail covers so many frames that the
+            // strip says little about where a shot starts, and a short event
+            // between two thumbnails is not in it at all. Then there is one
+            // every ten frames instead, each the middle of its picture cut to
+            // the width of its ten frames -- or of twenty, thirty..., to keep
+            // a slice wide enough to make out.
+            const int64_t sliceFrames = 10;
+            const double sliceMinW = std::max(4, displayOptions.thumbnailHeight / 10);
+            bool sliced = false;
+            if (frameStep > sliceFrames)
+            {
+                const int64_t step = sliceFrames * std::max(
+                    static_cast<int64_t>(1),
+                    static_cast<int64_t>(std::ceil(sliceMinW / (sliceFrames * perFrame))));
+                if (step < frameStep)
+                {
+                    frameStep = step;
+                    sliced = true;
+                }
+            }
 
             // Start at the first frame whose thumbnail can reach the band, and
             // stop once they have gone past it. Walking the whole item and
@@ -1479,7 +1500,7 @@ namespace tl
                 const ftk::Box2I spanBox(
                     mediaGeom.min.x + x,
                     mediaGeom.min.y,
-                    std::max(xNext - x, thumbnailWidth),
+                    sliced ? std::max(1, xNext - x) : std::max(xNext - x, thumbnailWidth),
                     displayOptions.thumbnailHeight);
                 if (!ftk::intersects(spanBox, activeRect))
                     continue;
@@ -1512,6 +1533,20 @@ namespace tl
                         item.timelineAudioPath);
                 }
                 wanted.insert(mediaTime);
+
+                if (sliced)
+                {
+                    // The middle of the picture, as wide as its frames.
+                    const int spanW = std::max(1, xNext - x);
+                    Item::Media media;
+                    media.x = x + spanW / 2 - thumbnailWidth / 2;
+                    media.w = thumbnailWidth;
+                    media.visibleX = x - media.x;
+                    media.visibleW = spanW;
+                    media.image = image;
+                    item.media.push_back(std::move(media));
+                    continue;
+                }
 
                 // The tiles share the one image and the one request. Each is
                 // cut where the next frame's place starts: the rounded step
@@ -1870,7 +1905,7 @@ namespace tl
                         // the item masks its own thumbnails, and each is cut
                         // where the next starts; see requestThumbnails().
                         const ftk::Box2I visibleBox(
-                            box.min.x,
+                            box.min.x + media.visibleX,
                             box.min.y,
                             media.visibleW > 0 ? media.visibleW : media.w,
                             box.h());
