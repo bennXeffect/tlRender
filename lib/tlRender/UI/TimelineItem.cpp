@@ -1447,11 +1447,12 @@ namespace tl
             // Zoomed out, a whole thumbnail covers so many frames that the
             // strip says little about where a shot starts, and a short event
             // between two thumbnails is not in it at all. Then there is one
-            // every ten frames instead, each the middle of its picture cut to
-            // the width of its ten frames -- or of twenty, thirty..., to keep
-            // a slice wide enough to make out.
-            const int64_t sliceFrames = 10;
-            const double sliceMinW = std::max(4, displayOptions.thumbnailHeight / 10);
+            // every twenty frames instead, each the middle of its picture cut
+            // to the width of its frames -- or every forty, sixty..., so that
+            // at least a third of the picture shows: a thinner slice could
+            // not be made out.
+            const int64_t sliceFrames = 20;
+            const double sliceMinW = std::max(4.0, thumbnailWidth / 3.0);
             bool sliced = false;
             if (frameStep > sliceFrames)
             {
