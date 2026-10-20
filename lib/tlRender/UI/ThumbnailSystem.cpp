@@ -341,6 +341,7 @@ namespace tl
                 IOOptions options;
                 ThumbnailType type = ThumbnailType::Timeline;
                 std::string key;
+                ThumbnailSystem::ColorFunction color;
                 std::promise<std::shared_ptr<ftk::Image> > promise;
             };
 
@@ -371,6 +372,8 @@ namespace tl
                 std::list<std::shared_ptr<ThumbnailRequest> > requests;
                 ftk::LRUCache<std::string, std::shared_ptr<ftk::Image> > cache;
                 bool stopped = false;
+                ThumbnailSystem::ColorFunction color;
+                std::string colorKey;
                 std::mutex mutex;
             };
             ThumbnailMutex thumbnailMutex;
@@ -690,18 +693,21 @@ namespace tl
             request->options = options;
             request->type = type;
 
-            const std::string key = getThumbnailKey(
+            std::string key = getThumbnailKey(
                 path,
                 mediaPath,
                 audioPath,
                 height,
                 time,
                 options);
-            request->key = key;
             std::shared_ptr<ftk::Image> thumbnail;
             bool notify = false;
             {
                 std::unique_lock<std::mutex> lock(p.thumbnailMutex.mutex);
+                // Made the way thumbnails are made now.
+                key += ";color:" + p.thumbnailMutex.colorKey;
+                request->key = key;
+                request->color = p.thumbnailMutex.color;
                 if (p.thumbnailMutex.cache.get(key, thumbnail))
                     ;
                 else if (!p.thumbnailMutex.stopped)
@@ -872,6 +878,14 @@ namespace tl
                     p.waveformMutex.cache.setMax(value.waveformMB * ftk::megabyte);
                 }
             }
+        }
+
+        void ThumbnailSystem::setColor(const ColorFunction& value, const std::string& key)
+        {
+            FTK_P();
+            std::unique_lock<std::mutex> lock(p.thumbnailMutex.mutex);
+            p.thumbnailMutex.color = value;
+            p.thumbnailMutex.colorKey = key;
         }
 
         void ThumbnailSystem::clearCache()
@@ -1059,11 +1073,18 @@ namespace tl
                                 if (videoData.image &&
                                     p.thumbnailThread.running)
                                 {
-                                    image = scaleImage(
-                                        context->getLogSystem(),
-                                        scale,
-                                        videoData.image,
-                                        size);
+                                    if (request->color)
+                                    {
+                                        image = request->color(request->mediaPath, videoData.image, size);
+                                    }
+                                    if (!image)
+                                    {
+                                        image = scaleImage(
+                                            context->getLogSystem(),
+                                            scale,
+                                            videoData.image,
+                                            size);
+                                    }
                                 }
                             }
                         }
@@ -1122,11 +1143,18 @@ namespace tl
                             }
                             if (layerImage && p.thumbnailThread.running)
                             {
-                                image = scaleImage(
-                                    context->getLogSystem(),
-                                    scale,
-                                    layerImage,
-                                    size);
+                                if (request->color)
+                                {
+                                    image = request->color(request->mediaPath, layerImage, size);
+                                }
+                                if (!image)
+                                {
+                                    image = scaleImage(
+                                        context->getLogSystem(),
+                                        scale,
+                                        layerImage,
+                                        size);
+                                }
                             }
                         }
                     }

@@ -13,6 +13,7 @@
 #include <ftk/Core/Observable.h>
 #include <ftk/Core/Path.h>
 
+#include <functional>
 #include <future>
 
 namespace tl
@@ -153,6 +154,19 @@ namespace tl
 
             //! Clear the cache.
             TL_UI_API void clearCache();
+
+            //! Turns a frame read whole into its thumbnail as it is to be
+            //! shown -- color managed -- given the path of its media and the
+            //! size wanted. Run on the thumbnail threads. A null result, or
+            //! no function, scales the frame as it is.
+            typedef std::function<std::shared_ptr<ftk::Image>(
+                const ftk::Path&,
+                const std::shared_ptr<ftk::Image>&,
+                const ftk::Size2I&)> ColorFunction;
+
+            //! Set how thumbnails are color managed. The key names it in the
+            //! cache: thumbnails made another way are made again.
+            TL_UI_API void setColor(const ColorFunction&, const std::string& key);
 
             ///@}
 
