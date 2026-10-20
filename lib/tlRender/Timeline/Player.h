@@ -443,6 +443,17 @@ namespace tl
         //! Observe the cache information.
         TL_TIMELINE_API std::shared_ptr<ftk::IObservable<PlayerCacheInfo> > observeCacheInfo() const;
 
+        //! Get the frames decoded so far, for a player of the same media
+        //! opened again to start with: a sequence reloaded because a render
+        //! added frames to it keeps the ones it had rather than reading them
+        //! all again. Asked of the cache thread, which answers on its next
+        //! turn; empty if it does not within half a second.
+        TL_TIMELINE_API std::map<OTIO_NS::RationalTime, std::vector<VideoFrame> > getVideoCache();
+
+        //! Start with frames decoded by another player of the same media, by
+        //! time. Those outside the time range are left out.
+        TL_TIMELINE_API void addVideoCache(const std::map<OTIO_NS::RationalTime, std::vector<VideoFrame> >&);
+
         //! Clear the cache.
         TL_TIMELINE_API void clearCache();
 

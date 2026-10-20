@@ -19,6 +19,8 @@
 
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
+#include <map>
 #include <mutex>
 #include <optional>
 #include <thread>
@@ -207,6 +209,13 @@ namespace tl
             std::vector<VideoFrame> currentVideoFrame;
             std::vector<AudioFrame> currentAudioFrame;
             PlayerCacheInfo cacheInfo;
+            //! The video cache asked for by getVideoCache(), and the frames
+            //! given by addVideoCache(), passed through here because the
+            //! cache is the cache thread's.
+            bool videoCacheExport = false;
+            std::optional<std::map<OTIO_NS::RationalTime, std::vector<VideoFrame> > > videoCacheExported;
+            std::map<OTIO_NS::RationalTime, std::vector<VideoFrame> > videoCacheImport;
+            std::condition_variable videoCacheCV;
             std::mutex mutex;
         };
         Mutex mutex;

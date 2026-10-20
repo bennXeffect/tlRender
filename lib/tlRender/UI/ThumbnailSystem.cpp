@@ -28,6 +28,7 @@
 #include <future>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <list>
 #include <mutex>
 #include <set>
@@ -212,6 +213,36 @@ namespace tl
                 return out;
             }
 
+            // A frame of a sequence by the frame's own file rather than by
+            // the sequence: the picture is that file's, and the sequence
+            // growing as a render writes it does not change it -- keyed by
+            // the sequence, every thumbnail was made again each time a
+            // frame was added. The time is in the key besides, so a frame
+            // number guessed wrong is only a key that matches less.
+            std::string mediaKey(
+                const ftk::Path& path,
+                const std::optional<OTIO_NS::RationalTime>& time)
+            {
+                std::stringstream ss;
+                if (path.isSeq() && time.has_value())
+                {
+                    ftk::Path frame = path;
+                    frame.setNum(ftk::toString(
+                        static_cast<int64_t>(std::llround(time->value())),
+                        path.getPad()));
+                    std::error_code ec;
+                    const auto t = std::filesystem::last_write_time(
+                        ftk::toFileSystem(frame.get()), ec);
+                    ss << frame.get() << ";" <<
+                        (ec ? int64_t(0) : static_cast<int64_t>(t.time_since_epoch().count()));
+                }
+                else
+                {
+                    ss << path.get() << ";" << seqHash(path) << ";" << fileTime(path);
+                }
+                return ss.str();
+            }
+
             std::string getThumbnailKey(
                 const ftk::Path& path,
                 const ftk::Path& mediaPath,
@@ -222,11 +253,18 @@ namespace tl
             {
                 std::stringstream ss;
                 ss << audioPath.get() << ";" << fileTime(audioPath) << ";";
-                ss << path.get() << ";" << seqHash(path) << ";" <<
-                    fileTime(path) << ";" <<
-                    mediaPath.get() << ";" << seqHash(mediaPath) << ";" <<
-                    fileTime(mediaPath) << ";" <<
-                    height << ";";
+                // A sequence asked about by itself is its own media.
+                if (path.get() == mediaPath.get())
+                {
+                    ss << mediaKey(path, time) << ";";
+                }
+                else
+                {
+                    ss << path.get() << ";" << seqHash(path) << ";" <<
+                        fileTime(path) << ";" <<
+                        mediaKey(mediaPath, time) << ";";
+                }
+                ss << height << ";";
                 if (time.has_value())
                 {
                     ss << time.value();

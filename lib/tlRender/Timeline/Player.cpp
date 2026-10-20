@@ -1002,6 +1002,35 @@ namespace tl
         }
     }
 
+    std::map<OTIO_NS::RationalTime, std::vector<VideoFrame> > Player::getVideoCache()
+    {
+        FTK_P();
+        std::map<OTIO_NS::RationalTime, std::vector<VideoFrame> > out;
+        std::unique_lock<std::mutex> lock(p.mutex.mutex);
+        p.mutex.videoCacheExported.reset();
+        p.mutex.videoCacheExport = true;
+        if (p.mutex.videoCacheCV.wait_for(
+            lock,
+            std::chrono::milliseconds(500),
+            [this] { return _p->mutex.videoCacheExported.has_value(); }))
+        {
+            out = std::move(p.mutex.videoCacheExported.value());
+        }
+        p.mutex.videoCacheExport = false;
+        p.mutex.videoCacheExported.reset();
+        return out;
+    }
+
+    void Player::addVideoCache(const std::map<OTIO_NS::RationalTime, std::vector<VideoFrame> >& value)
+    {
+        FTK_P();
+        std::unique_lock<std::mutex> lock(p.mutex.mutex);
+        for (const auto& i : value)
+        {
+            p.mutex.videoCacheImport[i.first] = i.second;
+        }
+    }
+
     std::shared_ptr<ftk::IObservable<PlayerCacheInfo> > Player::observeCacheInfo() const
     {
         return _p->cacheInfo;
@@ -1165,6 +1194,46 @@ namespace tl
             }
             p.thread.state = state;
             p.thread.cacheDir = cacheDir;
+
+            // The cache handed over and taken in; see getVideoCache().
+            std::map<OTIO_NS::RationalTime, std::vector<VideoFrame> > videoCacheImport;
+            {
+                std::unique_lock<std::mutex> lock(p.mutex.mutex);
+                if (p.mutex.videoCacheExport)
+                {
+                    p.mutex.videoCacheExport = false;
+                    p.mutex.videoCacheExported = p.thread.videoCache;
+                    p.mutex.videoCacheCV.notify_all();
+                }
+                videoCacheImport.swap(p.mutex.videoCacheImport);
+            }
+            for (const auto& i : videoCacheImport)
+            {
+                if (p.timeRange.contains(i.first) &&
+                    p.thread.videoCache.find(i.first) == p.thread.videoCache.end())
+                {
+                    // Measured as a frame read here is; see frameBytes.
+                    size_t bytes = 0;
+                    std::vector<const ftk::Image*> seen;
+                    for (const auto& videoFrame : i.second)
+                    {
+                        for (const auto& layer : videoFrame.layers)
+                        {
+                            for (const auto& image : { layer.image, layer.imageB })
+                            {
+                                if (image &&
+                                    std::find(seen.begin(), seen.end(), image.get()) == seen.end())
+                                {
+                                    seen.push_back(image.get());
+                                    bytes += image->getByteCount();
+                                }
+                            }
+                        }
+                    }
+                    p.thread.frameBytes = std::max(p.thread.frameBytes, bytes);
+                    p.thread.videoCache[i.first] = i.second;
+                }
+            }
 
             // Tell the timelines where the playhead is, so that they serve
             // the frames it reaches first.

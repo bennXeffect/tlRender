@@ -414,9 +414,22 @@ namespace tl
             const std::shared_ptr<ftk::FontSystem>& fontSystem) const
         {
             FTK_P();
-            const std::string labelMax =
-                p.data->timeUnitsModel->getLabel(p.timeRange.duration());
-            return fontSystem->getSize(labelMax, p.size.fontInfo);
+            // The widest label the ruler writes: the times along it are
+            // the media's, from where it starts, so a render from frame 986
+            // writes four digits where its length has two, and spaced for
+            // two the labels ran into each other.
+            ftk::Size2I out = fontSystem->getSize(
+                p.data->timeUnitsModel->getLabel(p.timeRange.duration()),
+                p.size.fontInfo);
+            for (const OTIO_NS::RationalTime& t : {
+                p.timeRange.start_time(),
+                p.timeRange.end_time_inclusive() })
+            {
+                const ftk::Size2I size = fontSystem->getSize(_timeLabel(t), p.size.fontInfo);
+                out.w = std::max(out.w, size.w);
+                out.h = std::max(out.h, size.h);
+            }
+            return out;
         }
 
         double TimelineRuler::_getSecondsInc(
