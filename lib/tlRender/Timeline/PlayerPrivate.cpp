@@ -135,6 +135,47 @@ namespace tl
         return out;
     }
 
+    void Player::Private::pruneRequests()
+    {
+        const OTIO_NS::TimeRange videoCacheRange = getVideoCacheRange(getVideoCacheMax());
+        const auto looped = tl::loop(videoCacheRange, thread.state.inOutRange);
+        std::vector<std::vector<uint64_t> > ids(1 + thread.state.compare.size());
+        auto i = thread.videoRequests.begin();
+        while (i != thread.videoRequests.end())
+        {
+            bool wanted = false;
+            for (const auto& range : looped)
+            {
+                if (range.contains(i->first))
+                {
+                    wanted = true;
+                    break;
+                }
+            }
+            if (wanted)
+            {
+                ++i;
+                continue;
+            }
+            for (size_t j = 0; j < i->second.size() && j < ids.size(); ++j)
+            {
+                ids[j].push_back(i->second[j].id);
+            }
+            i = thread.videoRequests.erase(i);
+        }
+        if (!ids[0].empty())
+        {
+            timeline->cancelRequests(ids[0]);
+        }
+        for (size_t k = 0; k < thread.state.compare.size(); ++k)
+        {
+            if (!ids[k + 1].empty())
+            {
+                thread.state.compare[k]->cancelRequests(ids[k + 1]);
+            }
+        }
+    }
+
     void Player::Private::clearRequests()
     {
         std::vector<std::vector<uint64_t> > ids(1 + thread.state.compare.size());

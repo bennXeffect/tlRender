@@ -454,6 +454,10 @@ namespace tl
         //! time. Those outside the time range are left out.
         TL_TIMELINE_API void addVideoCache(const std::map<OTIO_NS::RationalTime, std::vector<VideoFrame> >&);
 
+        //! Drop frames from the cache, by time, so they are read again:
+        //! their files were written over.
+        TL_TIMELINE_API void removeVideoCache(const std::vector<OTIO_NS::RationalTime>&);
+
         //! Clear the cache.
         TL_TIMELINE_API void clearCache();
 

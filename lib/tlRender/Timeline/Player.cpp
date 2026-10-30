@@ -615,7 +615,12 @@ namespace tl
             {
                 std::unique_lock<std::mutex> lock(p.mutex.mutex);
                 p.mutex.state.currentTime = tmp;
-                p.mutex.clearRequests = true;
+                // Only what is outside the cache's range now: cancelling
+                // every request threw away the frames being read on each
+                // step of a scrub, thirty or sixty a second, and the cache
+                // filled far slower while it went on. The playhead's own
+                // frame comes first by the request priority.
+                p.mutex.pruneRequests = true;
             }
             p.resetPlaybackTime(tmp);
         }
@@ -1031,6 +1036,13 @@ namespace tl
         }
     }
 
+    void Player::removeVideoCache(const std::vector<OTIO_NS::RationalTime>& value)
+    {
+        FTK_P();
+        std::unique_lock<std::mutex> lock(p.mutex.mutex);
+        p.mutex.videoCacheRemove.insert(p.mutex.videoCacheRemove.end(), value.begin(), value.end());
+    }
+
     std::shared_ptr<ftk::IObservable<PlayerCacheInfo> > Player::observeCacheInfo() const
     {
         return _p->cacheInfo;
@@ -1181,6 +1193,7 @@ namespace tl
             // Get mutex protected values.
             Private::PlaybackState state;
             bool clearRequests = false;
+            bool pruneRequests = false;
             bool clearCache = false;
             CacheDir cacheDir = CacheDir::First;
             {
@@ -1188,6 +1201,8 @@ namespace tl
                 state = p.mutex.state;
                 clearRequests = p.mutex.clearRequests;
                 p.mutex.clearRequests = false;
+                pruneRequests = p.mutex.pruneRequests;
+                p.mutex.pruneRequests = false;
                 clearCache = p.mutex.clearCache;
                 p.mutex.clearCache = false;
                 cacheDir = p.mutex.cacheDir;
@@ -1197,8 +1212,10 @@ namespace tl
 
             // The cache handed over and taken in; see getVideoCache().
             std::map<OTIO_NS::RationalTime, std::vector<VideoFrame> > videoCacheImport;
+            std::vector<OTIO_NS::RationalTime> videoCacheRemove;
             {
                 std::unique_lock<std::mutex> lock(p.mutex.mutex);
+                videoCacheRemove.swap(p.mutex.videoCacheRemove);
                 if (p.mutex.videoCacheExport)
                 {
                     p.mutex.videoCacheExport = false;
@@ -1206,6 +1223,10 @@ namespace tl
                     p.mutex.videoCacheCV.notify_all();
                 }
                 videoCacheImport.swap(p.mutex.videoCacheImport);
+            }
+            for (const auto& t : videoCacheRemove)
+            {
+                p.thread.videoCache.erase(t);
             }
             for (const auto& i : videoCacheImport)
             {
@@ -1261,6 +1282,10 @@ namespace tl
             if (clearRequests)
             {
                 p.clearRequests();
+            }
+            else if (pruneRequests)
+            {
+                p.pruneRequests();
             }
 
             // Clear the cache.

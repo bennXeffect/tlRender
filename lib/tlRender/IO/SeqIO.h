@@ -47,7 +47,10 @@ namespace tl
         TL_IO_API SeqOptions();
 
         double        defaultSpeed  = 30.0;
-        MissingFrames missingFrames = MissingFrames::Error;
+        //! A render being looked at as it is made, or one done in parts,
+        //! has holes: the frame before is held over them, which the viewer
+        //! says, rather than every one being an error.
+        MissingFrames missingFrames = MissingFrames::Hold;
 
         bool operator == (const SeqOptions&) const = default;
     };

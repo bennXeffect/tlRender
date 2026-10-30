@@ -125,6 +125,11 @@ namespace tl
             //! Set the display options.
             TL_UI_API void setDisplayOptions(const DisplayOptions&);
 
+            //! Ask for the thumbnails and the waveforms again: the media's
+            //! files were written over. What did not change comes back from
+            //! the thumbnail cache.
+            TL_UI_API void refreshMedia();
+
             //! Convert a position to a time.
             TL_UI_API OTIO_NS::RationalTime posToTime(float) const;
 

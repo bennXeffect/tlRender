@@ -661,6 +661,15 @@ namespace tl
             }
         }
         
+        void TimelineWidget::refreshMedia()
+        {
+            FTK_P();
+            for (const auto& item : p.timelineItems)
+            {
+                item->refreshMedia();
+            }
+        }
+
         ftk::Size2I TimelineWidget::getSizeHint() const
         {
             FTK_P();

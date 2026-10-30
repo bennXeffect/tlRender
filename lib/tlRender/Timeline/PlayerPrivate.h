@@ -32,6 +32,9 @@ namespace tl
         OTIO_NS::RationalTime loopPlayback(const OTIO_NS::RationalTime&, bool& looped);
 
         void clearRequests();
+        //! Cancel only the video requests outside the cache's range: after
+        //! a seek, the ones still in it are frames the cache still wants.
+        void pruneRequests();
         void clearCache();
         size_t getVideoCacheMax() const;
         size_t getAudioCacheMax() const;
@@ -204,6 +207,7 @@ namespace tl
         {
             PlaybackState state;
             bool clearRequests = false;
+            bool pruneRequests = false;
             bool clearCache = false;
             CacheDir cacheDir = CacheDir::Forward;
             std::vector<VideoFrame> currentVideoFrame;
@@ -215,6 +219,7 @@ namespace tl
             bool videoCacheExport = false;
             std::optional<std::map<OTIO_NS::RationalTime, std::vector<VideoFrame> > > videoCacheExported;
             std::map<OTIO_NS::RationalTime, std::vector<VideoFrame> > videoCacheImport;
+            std::vector<OTIO_NS::RationalTime> videoCacheRemove;
             std::condition_variable videoCacheCV;
             std::mutex mutex;
         };

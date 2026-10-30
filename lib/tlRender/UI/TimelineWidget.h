@@ -222,6 +222,10 @@ namespace tl
             //! Set the display options.
             TL_UI_API void setDisplayOptions(const DisplayOptions&);
 
+            //! Ask for the thumbnails and the waveforms again; see
+            //! TimelineItem::refreshMedia().
+            TL_UI_API void refreshMedia();
+
             ///@}
 
             TL_UI_API ftk::Size2I getSizeHint() const override;

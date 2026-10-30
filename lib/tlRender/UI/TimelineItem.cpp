@@ -506,6 +506,16 @@ namespace tl
             setDrawUpdate();
         }
 
+        void TimelineItem::refreshMedia()
+        {
+            FTK_P();
+            _cancelRequests();
+            p.size.init = true;
+            _tracksUpdate();
+            setSizeUpdate();
+            setDrawUpdate();
+        }
+
         ftk::Size2I TimelineItem::getSizeHint() const
         {
             return _p->size.sizeHint;
